@@ -45,21 +45,31 @@ export default async function handler(
     forwardHeaders["x-code"] = xCode;
   }
 
+  let targetUrl = target;
   const forwardParams: Record<string, string> = { ...params };
+  
   Object.entries(req.query).forEach(([key, value]) => {
-    if (key !== "method" && key !== "x-code") {
-      if (typeof value === "string") {
-        forwardParams[key] = value;
-      } else if (Array.isArray(value)) {
-        forwardParams[key] = value.join(",");
-      }
+    if (key === "method" || key === "x-code") return;
+    
+    const strValue = typeof value === "string" ? value : Array.isArray(value) ? value.join(",") : "";
+    
+    // 如果 URL 中包含 {key}，则替换掉，且不加入 query string
+    if (targetUrl.includes(`{${key}}`)) {
+      targetUrl = targetUrl.replace(`{${key}}`, strValue);
+    } else if (strValue) {
+      forwardParams[key] = strValue;
     }
   });
+
+  // 检查是否还有未替换的路径参数
+  if (targetUrl.match(/\{[^}]+\}/)) {
+    return res.status(400).json({ error: `Missing path parameters: ${targetUrl}` });
+  }
 
   try {
     const result = await proxyRequest({
       method: httpMethod,
-      targetUrl: target,
+      targetUrl: targetUrl,
       headers: forwardHeaders,
       body: req.body,
       params: forwardParams,
