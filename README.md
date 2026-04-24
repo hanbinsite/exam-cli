@@ -1,40 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# API Gateway
 
-## Getting Started
+基于 Next.js 的轻量 API 网关，通过单一入口 + method 参数路由到不同目标 API，部署在 Vercel。
 
-First, run the development server:
+## 使用方式
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+GET https://你的域名/api?method=user.getInfo&x-code=xxx
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `method` | 是 | 路由方法名，对应 `config/routes.ts` 中的配置 |
+| `x-code` | 否 | 认证参数，支持 query 传参或 header 传参 |
+| 其他参数 | 否 | 自动透传到目标 API 的 query 中 |
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+## 请求示例
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+**curl:**
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+```bash
+curl "https://你的域名/api?method=user.getInfo&x-code=your-code"
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**Postman:**
 
-## Learn More
+- Method: `GET`
+- URL: `https://你的域名/api?method=user.getInfo&x-code=your-code`
 
-To learn more about Next.js, take a look at the following resources:
+**POST 请求:**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
+```bash
+curl -X POST "https://你的域名/api?method=order.create&x-code=your-code" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id": 1, "quantity": 2}'
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 添加路由
 
-## Deploy on Vercel
+编辑 `config/routes.ts`：
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```ts
+const routes: Record<string, RouteConfig> = {
+  "user.getInfo": {
+    target: "https://api.example.com/user/info",
+  },
+  "order.list": {
+    target: "https://api.example.com/order/list",
+  },
+  // 添加新路由
+  "your.newMethod": {
+    target: "https://your-api.com/endpoint",
+    headers: { "X-Custom-Header": "value" },  // 可选：额外请求头
+    params: { "defaultParam": "value" },       // 可选：默认 query 参数
+  },
+};
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+## 项目结构
+
+```
+api-gateway/
+├── config/routes.ts      # 路由映射配置
+├── lib/proxy.ts          # 请求转发核心逻辑
+├── pages/api/index.ts    # 统一入口 API
+├── pages/index.tsx       # 空首页
+├── next.config.ts
+└── package.json
+```
+
+## 本地开发
+
+```bash
+npm install
+npm run dev
+```
+
+访问 `http://localhost:3000/api?method=user.getInfo&x-code=xxx`
+
+## 部署到 Vercel
+
+1. 在 [Vercel](https://vercel.com) 导入 Gitee/GitHub 仓库
+2. Framework Preset 选择 **Next.js**
+3. 点击 Deploy
+
+## 分支说明
+
+| 分支 | 用途 |
+|------|------|
+| `master` | 稳定发布版本 |
+| `develop` | 日常开发分支 |
