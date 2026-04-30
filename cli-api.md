@@ -1,54 +1,81 @@
-# CLI API 文档
+# CLI API 文档（最终精修版）
 
-> 供命令行 / Postman / 脚本查询使用，CLI 端点采用 `X-Code` 认证，不使用 User JWT。
+> 适用于命令行工具、脚本、Postman、嵌入式设备等只读查询场景。CLI 端点使用 `X-Code` 认证，不使用 JWT。
 
-## 基础信息
+---
 
+## 目录
+
+- [1. 文档说明](#1-文档说明)
+- [2. 认证与访问控制](#2-认证与访问控制)
+- [3. 查询码管理（用户端接口）](#3-查询码管理用户端接口)
+- [4. 科目接口](#4-科目接口)
+- [5. 题型与知识点](#5-题型与知识点)
+- [6. 题目接口](#6-题目接口)
+- [7. 学习资料接口](#7-学习资料接口)
+- [8. CLI 使用示例](#8-cli-使用示例)
+- [9. 接口索引表](#9-接口索引表)
+- [10. 错误响应示例](#10-错误响应示例)
+- [11. 限流说明](#11-限流说明)
+
+---
+
+## 1. 文档说明
+
+### 1.1 基础信息
 - **Base URL**: `https://exam-server.hanbin123.com/api/v1`
-- **响应格式**: 所有接口统一返回 `{ "code": int, "data": ..., "message": str }`
-- **CLI 认证方式**: 请求头携带 `X-Code: <6位查询码>`
-- **查询码获取方式**: 先通过用户端登录，再调用用户接口获取或重置查询码
-- **能力边界**: CLI 仅提供只读查询，不提供考试提交、进度保存等写操作
+- **认证方式**: 请求头 `X-Code: <6位查询码>`
+- **能力边界**: 只读查询，不支持考试提交、答题进度保存等写操作
+- **固定题目模式**: CLI 题目接口固定使用 `study` 视图
+
+### 1.2 统一响应结构
+```json
+{
+  "code": 200,
+  "data": {},
+  "message": "success"
+}
+```
+
+### 1.3 时间格式约定
+文档中的时间统一采用 ISO 8601 示例，例如：
+- `2026-04-21T10:00:00+00:00`
 
 ---
 
-## 1. CLI 认证说明
+## 2. 认证与访问控制
 
-### 1.1 X-Code 请求头
+### 2.1 查询码说明
+- 查询码来源于用户端：`GET /auth/my-code` 或 `PUT /auth/regenerate-code`
+- 当前系统自动生成的查询码为 **6 位** 大写字母数字组合
+- 自动排除易混淆字符：`0/O/I/L`
 
-示例：
+### 2.2 用户科目访问权限
+- 当 `REQUIRE_USER_SUBJECT_AUTH=true` 时，CLI 访问科目内资源需具备用户科目访问权限
+- 当 `REQUIRE_USER_SUBJECT_AUTH=false` 时，CLI 跳过科目访问权限检查，仅要求有效 `X-Code`
 
-```http
-X-Code: A3K9X2
-```
+### 2.3 常见失败场景
 
-### 1.2 安全约束
-
-| 约束 | 说明 |
+| 场景 | 结果 |
 |------|------|
-| 只读 | CLI 端点只有 GET，无写入能力 |
-| 固定 study 模式 | 返回答案 + 解析，不支持 exam / practice |
-| 科目隔离 | 复用用户科目授权体系 |
-| 免登录 | 不使用 Bearer Token，直接用 X-Code |
-| 可轮换 | 可通过用户接口重新生成查询码 |
+| 未传 `X-Code` | 401：`X-Code header required` |
+| 查询码无效 | 401：`Invalid or deactivated code` |
+| 查询码对应用户已停用 | 401：`Invalid or deactivated code` |
+| 无科目访问权限 | 403：`No access to subject '{subject_id}'` |
 
 ---
 
-## 2. 查询码管理（用户端接口）
+## 3. 查询码管理（用户端接口）
 
-> 下面两个接口属于用户认证体系，调用时仍需 **User JWT**，但它们服务于 CLI 使用场景，因此统一放在本文件中说明。
+> 下列接口属于用户端接口，调用时仍需 User JWT，但它们直接服务于 CLI 场景，因此在 CLI 文档中一并说明。
 
-### 2.1 查看我的查询码
+### 3.1 获取我的查询码
+- **方法**: `GET`
+- **路径**: `/auth/my-code`
+- **认证**: 需 User JWT
+- **权限**: 无
 
-```
-GET /api/v1/auth/my-code
-```
-
-**需 User JWT**
-
-> 查看当前用户的查询码；如果尚未生成，系统会自动生成并返回。
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -59,17 +86,13 @@ GET /api/v1/auth/my-code
 }
 ```
 
-### 2.2 重新生成查询码
+### 3.2 重新生成查询码
+- **方法**: `PUT`
+- **路径**: `/auth/regenerate-code`
+- **认证**: 需 User JWT
+- **权限**: 无
 
-```
-PUT /api/v1/auth/regenerate-code
-```
-
-**需 User JWT**
-
-> 重新生成查询码，旧码立即失效。
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -82,19 +105,15 @@ PUT /api/v1/auth/regenerate-code
 
 ---
 
-## 3. CLI 科目接口
+## 4. 科目接口
 
-### 3.1 获取我的科目列表
+### 4.1 获取我的科目列表
+- **方法**: `GET`
+- **路径**: `/cli/subjects`
+- **认证**: 需 `X-Code`
+- **权限**: 无
 
-```
-GET /api/v1/cli/subjects
-```
-
-**需 X-Code 认证**
-
-> 返回当前用户被授权的科目列表。
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -114,15 +133,13 @@ GET /api/v1/cli/subjects
 }
 ```
 
-### 3.2 获取科目详情
+### 4.2 获取科目详情
+- **方法**: `GET`
+- **路径**: `/cli/subjects/{subject_id}`
+- **认证**: 需 `X-Code`
+- **权限**: 用户科目访问权限
 
-```
-GET /api/v1/cli/subjects/{subject_id}
-```
-
-**需 X-Code 认证 + 用户科目授权**
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -140,17 +157,15 @@ GET /api/v1/cli/subjects/{subject_id}
 
 ---
 
-## 4. CLI 题型与知识点
+## 5. 题型与知识点
 
-### 4.1 获取科目题型列表
+### 5.1 获取题型列表
+- **方法**: `GET`
+- **路径**: `/cli/subjects/{subject_id}/question-types`
+- **认证**: 需 `X-Code`
+- **权限**: 用户科目访问权限
 
-```
-GET /api/v1/cli/subjects/{subject_id}/question-types
-```
-
-**需 X-Code 认证 + 用户科目授权**
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -171,29 +186,35 @@ GET /api/v1/cli/subjects/{subject_id}/question-types
 }
 ```
 
-### 4.2 获取知识点树
+### 5.2 获取知识点树
+- **方法**: `GET`
+- **路径**: `/cli/subjects/{subject_id}/knowledge-points`
+- **认证**: 需 `X-Code`
+- **权限**: 用户科目访问权限
 
-```
-GET /api/v1/cli/subjects/{subject_id}/knowledge-points
-```
-
-**需 X-Code 认证 + 用户科目授权**
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
   "data": [
     {
       "id": 1,
-      "name": "区块链基础",
+      "subject_id": "blockchain",
       "parent_id": null,
+      "name": "区块链基础",
+      "description": "区块链基础知识",
+      "sort_order": 1,
+      "is_active": true,
       "children": [
         {
           "id": 2,
-          "name": "共识机制",
+          "subject_id": "blockchain",
           "parent_id": 1,
-          "children": []
+          "name": "共识机制",
+          "description": null,
+          "sort_order": 2,
+          "is_active": true,
+          "children": null
         }
       ]
     }
@@ -204,27 +225,24 @@ GET /api/v1/cli/subjects/{subject_id}/knowledge-points
 
 ---
 
-## 5. CLI 题目接口
+## 6. 题目接口
 
-### 5.1 获取科目题目列表
+### 6.1 获取题目列表
+- **方法**: `GET`
+- **路径**: `/cli/subjects/{subject_id}/questions`
+- **认证**: 需 `X-Code`
+- **权限**: 用户科目访问权限
 
-```
-GET /api/v1/cli/subjects/{subject_id}/questions?type={typeName}&difficulty={level}&page=1&pageSize=20
-```
-
-**需 X-Code 认证 + 用户科目授权**
+**查询参数**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| subject_id | string | 是 | 科目 ID（路径参数） |
-| type | string | 否 | 按题型名过滤（choice/judgment 等） |
-| difficulty | string | 否 | 按难度过滤（easy/medium/hard） |
-| page | int | 否 | 页码，默认 1 |
-| pageSize | int | 否 | 每页数量，默认 20，最大 100 |
+| type | string | 否 | 题型名过滤 |
+| difficulty | string | 否 | 难度过滤 |
+| page | int | 否 | 默认 1 |
+| pageSize | int | 否 | 默认 20，最大 100 |
 
-> 固定 study 模式，返回答案 + 解析 + 高亮标记。
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -260,15 +278,13 @@ GET /api/v1/cli/subjects/{subject_id}/questions?type={typeName}&difficulty={leve
 }
 ```
 
-### 5.2 获取题目统计
+### 6.2 获取题目统计
+- **方法**: `GET`
+- **路径**: `/cli/subjects/{subject_id}/questions/stats`
+- **认证**: 需 `X-Code`
+- **权限**: 用户科目访问权限
 
-```
-GET /api/v1/cli/subjects/{subject_id}/questions/stats
-```
-
-**需 X-Code 认证 + 用户科目授权**
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -288,17 +304,13 @@ GET /api/v1/cli/subjects/{subject_id}/questions/stats
 }
 ```
 
-### 5.3 获取单题详情
+### 6.3 获取单题详情
+- **方法**: `GET`
+- **路径**: `/cli/questions/{question_id}`
+- **认证**: 需 `X-Code`
+- **权限**: 服务端会校验题目所属科目的访问权限
 
-```
-GET /api/v1/cli/questions/{question_id}
-```
-
-**需 X-Code 认证**
-
-> 固定 study 模式，返回答案 + 解析；服务端会校验当前用户对题目所属科目的访问权限。
-
-成功响应：
+**成功响应**
 ```json
 {
   "code": 200,
@@ -327,82 +339,31 @@ GET /api/v1/cli/questions/{question_id}
 
 ---
 
-## 6. CLI 学习资料接口
+## 7. 学习资料接口
 
-### 6.1 获取科目学习资料列表
+### 7.1 获取资料列表
+- **方法**: `GET`
+- **路径**: `/cli/subjects/{subject_id}/materials`
+- **认证**: 需 `X-Code`
+- **权限**: 用户科目访问权限
 
-```
-GET /api/v1/cli/subjects/{subject_id}/materials?type={type}&page=1&pageSize=20
-```
-
-**需 X-Code 认证 + 用户科目授权**
+**查询参数**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| subject_id | string | 是 | 科目 ID（路径参数） |
 | type | string | 否 | 资料类型过滤 |
-| page | int | 否 | 页码，默认 1 |
-| pageSize | int | 否 | 每页数量，默认 20，最大 100 |
+| page | int | 否 | 默认 1 |
+| pageSize | int | 否 | 默认 20，最大 100 |
 
-成功响应：
-```json
-{
-  "code": 200,
-  "data": {
-    "items": [
-      {
-        "id": 1,
-        "subject_id": "blockchain",
-        "type": "guide",
-        "title": "搭建以太坊开发环境",
-        "summary": "环境搭建指南",
-        "tags": ["以太坊", "开发环境"],
-        "sort_order": 1
-      }
-    ],
-    "total": 1,
-    "page": 1,
-    "page_size": 20
-  },
-  "message": "success"
-}
-```
-
-### 6.2 获取学习资料详情
-
-```
-GET /api/v1/cli/materials/{material_id}
-```
-
-**需 X-Code 认证**
-
-> 服务端会校验当前用户是否有该资料所属科目的访问权限。
-
-成功响应：
-```json
-{
-  "code": 200,
-  "data": {
-    "id": 1,
-    "subject_id": "blockchain",
-    "type": "guide",
-    "title": "搭建以太坊开发环境",
-    "content": "本实操将引导你完成以太坊开发环境的搭建...",
-    "meta": {
-      "steps": ["步骤1: 安装Node.js", "步骤2: 安装Truffle"],
-      "expected_output": "Truffle v5.0.0"
-    },
-    "summary": "环境搭建指南",
-    "tags": ["以太坊", "开发环境"],
-    "sort_order": 1
-  },
-  "message": "success"
-}
-```
+### 7.2 获取资料详情
+- **方法**: `GET`
+- **路径**: `/cli/materials/{material_id}`
+- **认证**: 需 `X-Code`
+- **权限**: 服务端会校验资料所属科目的访问权限
 
 ---
 
-## 7. CLI 使用示例
+## 8. CLI 使用示例
 
 ```bash
 # 查我的科目
@@ -411,19 +372,19 @@ curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/subjects
 # 查科目详情
 curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/subjects/blockchain
 
-# 查题型列表
+# 查题型
 curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/subjects/blockchain/question-types
 
 # 查知识点树
 curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/subjects/blockchain/knowledge-points
 
-# 查某科选择题列表
+# 查题目列表
 curl -H "X-Code: A3K9X2" "https://exam-server.hanbin123.com/api/v1/cli/subjects/blockchain/questions?type=choice"
 
 # 查题目统计
 curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/subjects/blockchain/questions/stats
 
-# 查单题答案
+# 查单题详情
 curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/questions/42
 
 # 查资料列表
@@ -432,3 +393,68 @@ curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/subjects/b
 # 查资料详情
 curl -H "X-Code: A3K9X2" https://exam-server.hanbin123.com/api/v1/cli/materials/10
 ```
+
+---
+
+## 9. 接口索引表
+
+| 模块 | 方法 | 路径 |
+|------|------|------|
+| 查询码 | GET | `/auth/my-code` |
+| 查询码 | PUT | `/auth/regenerate-code` |
+| 科目 | GET | `/cli/subjects` |
+| 科目 | GET | `/cli/subjects/{subject_id}` |
+| 题型 | GET | `/cli/subjects/{subject_id}/question-types` |
+| 知识点 | GET | `/cli/subjects/{subject_id}/knowledge-points` |
+| 题目 | GET | `/cli/subjects/{subject_id}/questions` |
+| 题目 | GET | `/cli/subjects/{subject_id}/questions/stats` |
+| 题目 | GET | `/cli/questions/{question_id}` |
+| 资料 | GET | `/cli/subjects/{subject_id}/materials` |
+| 资料 | GET | `/cli/materials/{material_id}` |
+
+---
+
+## 10. 错误响应示例
+
+### 10.1 未携带 X-Code
+```json
+{
+  "code": 401,
+  "data": null,
+  "message": "X-Code header required"
+}
+```
+
+### 10.2 查询码无效或用户已停用
+```json
+{
+  "code": 401,
+  "data": null,
+  "message": "Invalid or deactivated code"
+}
+```
+
+### 10.3 无科目访问权限
+```json
+{
+  "code": 403,
+  "data": null,
+  "message": "No access to subject 'blockchain'"
+}
+```
+
+---
+
+## 11. 限流说明
+
+| 路径模式 | 限制 | 时间窗口 |
+|----------|------|----------|
+| `/auth/login` | 10 次 | 60 秒 |
+| `/auth/register` | 5 次 | 60 秒 |
+| `/admin/auth/login` | 10 次 | 60 秒 |
+| `/admin/auth/register` | 3 次 | 60 秒 |
+| `/exams/session/*` | 20 次 | 60 秒 |
+| `/cli/*` | 5 次 | 60 秒 |
+| 其他端点 | 100 次 | 60 秒 |
+
+**排除限流的端点**：`/health`、`/ping`、`/docs`、`/openapi.json`、`/redoc`

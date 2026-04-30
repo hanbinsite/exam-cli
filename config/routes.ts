@@ -8,17 +8,7 @@ export interface RouteConfig {
 const BASE_URL = "https://exam-server.hanbin123.com/api/v1";
 
 const routes: Record<string, RouteConfig> = {
-  // 2. 查询码管理（用户端接口）- 注意：这两个接口需要 User JWT (Bearer Token)
-  "auth.myCode": {
-    target: `${BASE_URL}/auth/my-code`,
-    method: "GET",
-  },
-  "auth.regenerateCode": {
-    target: `${BASE_URL}/auth/regenerate-code`,
-    method: "PUT",
-  },
-
-  // 3. CLI 科目接口
+  // CLI 科目接口
   "subjects": {
     target: `${BASE_URL}/cli/subjects`,
     method: "GET",
