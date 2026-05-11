@@ -1,0 +1,59 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+import { proxyRequest } from "@/lib/proxy";
+
+const TARGET = "https://exam-server.hanbin123.com/api/v1/cli/subjects/szrgzn2605/materials";
+
+function extractString(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] || "";
+  return value || "";
+}
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-code");
+    res.setHeader("Access-Control-Max-Age", "86400");
+    return res.status(204).end();
+  }
+
+  const xCode =
+    extractString(req.query["x-code"]) ||
+    extractString(req.headers["x-code"] as string | string[] | undefined) ||
+    "";
+
+  if (!xCode) {
+    return res.status(401).json({ code: 401, data: null, message: "x-code required" });
+  }
+
+  const forwardParams: Record<string, string> = {};
+  Object.entries(req.query).forEach(([key, value]) => {
+    if (key === "x-code") return;
+    if (value) {
+      forwardParams[key] = typeof value === "string" ? value : Array.isArray(value) ? value.join(",") : "";
+    }
+  });
+
+  try {
+    const result = await proxyRequest({
+      method: "GET",
+      targetUrl: TARGET,
+      headers: { "x-code": xCode },
+      params: forwardParams,
+    });
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    const contentType = result.headers["content-type"] || "application/json";
+    res.setHeader("Content-Type", contentType);
+    return res.status(result.status).json(result.data);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return res.status(504).json({ error: "Upstream request timeout" });
+    }
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(502).json({ error: "Upstream request failed", detail: message });
+  }
+}
