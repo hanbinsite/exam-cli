@@ -8,6 +8,12 @@ function extractString(value: string | string[] | undefined): string {
   return value || "";
 }
 
+function formatAsText(data: { items: Array<{ title: string; content: string }> }): string {
+  return data.items
+    .map((item) => `# ${item.title}\n\n${item.content}`)
+    .join("\n\n---\n\n");
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -45,10 +51,12 @@ export default async function handler(
       params: forwardParams,
     });
 
+    const responseData = result.data as { code: number; data: { items: Array<{ title: string; content: string }> } };
+    const text = formatAsText(responseData.data);
+
     res.setHeader("Access-Control-Allow-Origin", "*");
-    const contentType = result.headers["content-type"] || "application/json";
-    res.setHeader("Content-Type", contentType);
-    return res.status(result.status).json(result.data);
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(200).send(text);
   } catch (error: unknown) {
     if (error instanceof Error && error.name === "AbortError") {
       return res.status(504).json({ error: "Upstream request timeout" });
